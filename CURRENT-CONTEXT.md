@@ -7,19 +7,23 @@ Week 1 — Data + API + State
 `babcofoods/babco-labs-erp-v2-training-curriculum` — READ ONLY.
 
 ## Current Project
-Common Week 1 bootstrap.
+Project 1 — Business Record API.
 
 ## Current Build Unit
-0.1 Repository Bootstrap.
+1.1 SQL Model.
 
 ## Last Verified Completion
-Repository exists and README points to the correct Training Curriculum repository.
+Build Units 0.1, 0.2 and 0.3 are verified complete.
+
+- Repository bootstrap complete.
+- Node.js 22 + TypeScript + Express + Vitest baseline passed CI.
+- Environment guard tests passed CI.
 
 ## Current Blocker
-None.
+The Project 1 SQL DDL is committed, but it cannot be marked verified until it is executed against an isolated Week 1 Azure SQL lab database/schema. The curriculum does not provide credentials or a connection string; production data/database must not be used.
 
 ## Next Action
-Finish repository bootstrap files, then initialize and verify the Node.js 22 + TypeScript + Express + Vitest smoke baseline.
+Provide or provision an isolated Week 1 Azure SQL lab target, set `AZURE_SQL_CONNECTION_STRING` securely outside source control, execute `project-01-business-record-api/sql/schema.sql`, then prove PK/FK/unique/check constraints with positive and negative SQL tests.
 
 ## Important Decisions
 - Use one personal Week 1 repository with four isolated project folders.
@@ -27,6 +31,6 @@ Finish repository bootstrap files, then initialize and verify the Node.js 22 + T
 - Do not use the old BABCO Labs ERP V2 Readiness Program repository.
 - No ORM in Week 1.
 - No polished UI, Entra/OAuth, AI business decisions, Service Bus, or production data in Week 1.
-- One build unit at a time.
-- A unit is complete only after positive test, failure/negative test where applicable, and evidence.
+- One build unit at a time unless an external blocker makes another unit fully independent.
+- A unit is complete only after positive test, negative/failure test where applicable, and evidence.
 - Use RCA Agent v5 when a unit is genuinely failing; use RCS Solver v2 for the smallest safe corrective plan.
