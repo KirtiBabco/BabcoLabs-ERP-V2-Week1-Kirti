@@ -4,8 +4,38 @@ let poolPromise: Promise<sql.ConnectionPool> | null = null;
 
 export function getPool(): Promise<sql.ConnectionPool> {
   const connectionString = process.env.AZURE_SQL_CONNECTION_STRING;
-  if (!connectionString) throw new Error('AZURE_SQL_CONNECTION_STRING is not configured');
-  if (!poolPromise) poolPromise = new sql.ConnectionPool(connectionString).connect();
+  if (connectionString) {
+    if (!poolPromise) poolPromise = new sql.ConnectionPool(connectionString).connect();
+    return poolPromise;
+  }
+
+  const server = process.env.AZURE_SQL_SERVER;
+  const database = process.env.AZURE_SQL_DATABASE;
+  const clientId = process.env.AZURE_SQL_CLIENT_ID;
+
+  if (!server || !database || !clientId) {
+    throw new Error('Azure SQL is not configured. Set AZURE_SQL_CONNECTION_STRING or managed identity settings.');
+  }
+
+  const config: any = {
+    server,
+    database,
+    options: {
+      encrypt: true,
+      trustServerCertificate: false
+    },
+    authentication: {
+      type: 'azure-active-directory-msi-app-service',
+      options: { clientId }
+    },
+    pool: {
+      max: 5,
+      min: 0,
+      idleTimeoutMillis: 30000
+    }
+  };
+
+  if (!poolPromise) poolPromise = new sql.ConnectionPool(config).connect();
   return poolPromise;
 }
 
