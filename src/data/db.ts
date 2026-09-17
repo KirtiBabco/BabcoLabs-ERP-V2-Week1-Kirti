@@ -13,9 +13,12 @@ export function getPool(): Promise<sql.ConnectionPool> {
   const database = process.env.AZURE_SQL_DATABASE;
   const clientId = process.env.AZURE_SQL_CLIENT_ID;
 
-  if (!server || !database || !clientId) {
-    throw new Error('Azure SQL is not configured. Set AZURE_SQL_CONNECTION_STRING or managed identity settings.');
+  if (!server || !database) {
+    throw new Error('Azure SQL is not configured. Set AZURE_SQL_CONNECTION_STRING or AZURE_SQL_SERVER + AZURE_SQL_DATABASE.');
   }
+
+  const authOptions: Record<string, string> = {};
+  if (clientId) authOptions.clientId = clientId;
 
   const config: any = {
     server,
@@ -26,7 +29,7 @@ export function getPool(): Promise<sql.ConnectionPool> {
     },
     authentication: {
       type: 'azure-active-directory-msi-app-service',
-      options: { clientId }
+      options: authOptions
     },
     pool: {
       max: 5,
