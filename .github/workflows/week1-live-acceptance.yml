@@ -1,0 +1,191 @@
+name: Week 1 Live Acceptance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/live-trigger'
+
+jobs:
+  live-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Execute Week 1 Projects 1-4 acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://app-babco-w1-p1-kirti-260917.azurewebsites.net"
+
+          wait_ready() {
+            for i in $(seq 1 60); do
+              H=$(curl -sS -o /tmp/health.json -w "%{http_code}" "$BASE/health" || true)
+              W=$(curl -sS -o /tmp/defs.json -w "%{http_code}" "$BASE/api/v1/workflow-definitions" || true)
+              if [ "$H" = "200" ] && [ "$W" = "200" ]; then
+                jq -e '.projects == [1,2,3,4]' /tmp/health.json >/dev/null
+                return 0
+              fi
+              echo "Waiting for latest App Service deployment ($i/60): health=$H workflows=$W"
+              sleep 10
+            done
+            echo "App did not become ready"
+            cat /tmp/health.json 2>/dev/null || true
+            cat /tmp/defs.json 2>/dev/null || true
+            return 1
+          }
+
+          http_code() {
+            curl -sS -o /tmp/body.out -w "%{http_code}" "$@"
+          }
+
+          wait_ready
+          echo "=== PROJECT 1: BUSINESS RECORD API ==="
+          REQ="BR-${GITHUB_RUN_ID}"
+          cat > /tmp/p1.json <<JSON
+          {
+            "request_number":"$REQ",
+            "request_type":"PURCHASE",
+            "title":"Week 1 Live Acceptance Request",
+            "description":"Project 1 durable relational record",
+            "priority":"NORMAL",
+            "status":"OPEN",
+            "owner_code":"LAB-USER-01",
+            "lines":[
+              {"line_number":1,"item_code":"SKU-1001","description":"Case one","quantity":2,"unit":"CS"},
+              {"line_number":2,"item_code":"SKU-1002","description":"Each one","quantity":3,"unit":"EA"}
+            ]
+          }
+          JSON
+          curl -fsS -H 'Content-Type: application/json' -d @/tmp/p1.json "$BASE/api/v1/business-requests" > /tmp/p1-created.json
+          P1_ID=$(jq -r '.request_id' /tmp/p1-created.json)
+          test "$P1_ID" != "null"
+          curl -fsS "$BASE/api/v1/business-requests/$P1_ID" > /tmp/p1-get.json
+          jq -e '.lines | length == 2' /tmp/p1-get.json >/dev/null
+          jq -e '.request_number == "'"$REQ"'"' /tmp/p1-get.json >/dev/null
+
+          D=$(http_code -H 'Content-Type: application/json' -d @/tmp/p1.json "$BASE/api/v1/business-requests")
+          test "$D" = "409"
+
+          cat > /tmp/p1-invalid.json <<JSON
+          {"request_number":"BR-BAD-${GITHUB_RUN_ID}","request_type":"PURCHASE","priority":"NORMAL","status":"OPEN","owner_code":"LAB-USER-01"}
+          JSON
+          V=$(http_code -H 'Content-Type: application/json' -d @/tmp/p1-invalid.json "$BASE/api/v1/business-requests")
+          test "$V" = "400"
+
+          curl -fsS "$BASE/api/v1/business-requests?status=OPEN&type=PURCHASE&ownerCode=LAB-USER-01" > /tmp/p1-filter.json
+          jq -e --arg id "$P1_ID" 'map(.request_id) | index($id) != null' /tmp/p1-filter.json >/dev/null
+          curl -fsS -X PATCH -H 'Content-Type: application/json' -d '{"priority":"HIGH"}' "$BASE/api/v1/business-requests/$P1_ID" >/dev/null
+          curl -fsS "$BASE/api/v1/business-requests/$P1_ID" | jq -e '.priority=="HIGH"' >/dev/null
+
+          echo "=== PROJECT 2: STATE MACHINE ==="
+          curl -fsS "$BASE/api/v1/workflow-definitions" > /tmp/defs.json
+          jq -e 'length >= 4 and any(.[]; .definition_key=="RELEASE_LIFECYCLE")' /tmp/defs.json >/dev/null
+          curl -fsS -H 'Content-Type: application/json' -d '{"definition_key":"APPROVAL"}' "$BASE/api/v1/workflow-instances" > /tmp/p2-created.json
+          P2_ID=$(jq -r '.instance_id' /tmp/p2-created.json)
+          curl -fsS -H 'Content-Type: application/json' -d '{"transition":"SUBMIT","expectedCurrentState":"DRAFT","reason":"ready","actorRef":"LAB-USER-01"}' "$BASE/api/v1/workflow-instances/$P2_ID/transitions" >/dev/null
+
+          BAD=$(http_code -H 'Content-Type: application/json' -d '{"transition":"SUBMIT","expectedCurrentState":"SUBMITTED","reason":"illegal","actorRef":"LAB-USER-01"}' "$BASE/api/v1/workflow-instances/$P2_ID/transitions")
+          test "$BAD" = "409"
+
+          set +e
+          curl -sS -o /tmp/approve.json -w "%{http_code}" -H 'Content-Type: application/json' -d '{"transition":"APPROVE","expectedCurrentState":"SUBMITTED","reason":"approve","actorRef":"LAB-A"}' "$BASE/api/v1/workflow-instances/$P2_ID/transitions" > /tmp/approve.code &
+          A_PID=$!
+          curl -sS -o /tmp/reject.json -w "%{http_code}" -H 'Content-Type: application/json' -d '{"transition":"REJECT","expectedCurrentState":"SUBMITTED","reason":"reject","actorRef":"LAB-B"}' "$BASE/api/v1/workflow-instances/$P2_ID/transitions" > /tmp/reject.code &
+          R_PID=$!
+          wait $A_PID; wait $R_PID
+          set -e
+          A_CODE=$(cat /tmp/approve.code); R_CODE=$(cat /tmp/reject.code)
+          echo "Competing transition codes: approve=$A_CODE reject=$R_CODE"
+          test "$A_CODE" = "200" -o "$R_CODE" = "200"
+          test "$A_CODE" = "409" -o "$R_CODE" = "409"
+          curl -fsS "$BASE/api/v1/workflow-instances/$P2_ID/history" > /tmp/p2-history.json
+          jq -e 'length == 2' /tmp/p2-history.json >/dev/null
+
+          curl -fsS -H 'Content-Type: application/json' -d '{"definition_key":"APPROVAL"}' "$BASE/api/v1/workflow-instances" > /tmp/p2-rollback.json
+          P2_RB=$(jq -r '.instance_id' /tmp/p2-rollback.json)
+          RB=$(http_code -H 'x-test-force-history-failure: 1' -H 'Content-Type: application/json' -d '{"transition":"SUBMIT","expectedCurrentState":"DRAFT","reason":"rollback","actorRef":"LAB-USER-01"}' "$BASE/api/v1/workflow-instances/$P2_RB/transitions")
+          test "$RB" = "500"
+          curl -fsS "$BASE/api/v1/workflow-instances/$P2_RB" | jq -e '.current_state=="DRAFT" and .revision==0' >/dev/null
+          curl -fsS "$BASE/api/v1/workflow-instances/$P2_RB/history" | jq -e 'length==0' >/dev/null
+
+          echo "=== PROJECT 3: DOCUMENT EVIDENCE STORE ==="
+          printf 'BABCO Week1 evidence %s\n' "$GITHUB_RUN_ID" > /tmp/evidence.txt
+          LOCAL_SHA=$(sha256sum /tmp/evidence.txt | awk '{print $1}')
+          curl -fsS -F 'entity_type=BUSINESS_REQUEST' -F "entity_id=$P1_ID" -F 'source_ref=live-acceptance' -F 'file=@/tmp/evidence.txt;type=text/plain' "$BASE/api/v1/evidence" > /tmp/p3-created.json
+          P3_ID=$(jq -r '.evidence_id' /tmp/p3-created.json)
+          jq -e --arg sha "$LOCAL_SHA" '.sha256_hex==$sha' /tmp/p3-created.json >/dev/null
+          curl -fsS "$BASE/api/v1/evidence/$P3_ID" | jq -e --arg id "$P3_ID" '.evidence_id==$id' >/dev/null
+          curl -fsS "$BASE/api/v1/evidence/$P3_ID/content" -o /tmp/evidence-downloaded.txt
+          DOWN_SHA=$(sha256sum /tmp/evidence-downloaded.txt | awk '{print $1}')
+          test "$LOCAL_SHA" = "$DOWN_SHA"
+          curl -fsS "$BASE/api/v1/entities/BUSINESS_REQUEST/$P1_ID/evidence" | jq -e --arg id "$P3_ID" 'map(.evidence_id) | index($id) != null' >/dev/null
+          curl -fsS -X POST "$BASE/api/v1/evidence/$P3_ID/verify-integrity" | jq -e '.integrity_ok==true' >/dev/null
+          curl -fsS -X POST "$BASE/api/v1/lab/evidence/$P3_ID/corrupt-copy-check" | jq -e '.original_unchanged==true and .disposable_copy_integrity_ok==false' >/dev/null
+
+          printf 'different bytes %s\n' "$GITHUB_RUN_ID" > /tmp/evidence2.txt
+          curl -fsS -F 'entity_type=BUSINESS_REQUEST' -F "entity_id=$P1_ID" -F 'file=@/tmp/evidence2.txt;filename=evidence.txt;type=text/plain' "$BASE/api/v1/evidence" > /tmp/p3-second.json
+          P3_ID2=$(jq -r '.evidence_id' /tmp/p3-second.json)
+          test "$P3_ID" != "$P3_ID2"
+          PF=$(http_code -H 'x-test-force-sql-failure: 1' -F 'entity_type=CASE' -F 'entity_id=FAIL-CASE' -F 'file=@/tmp/evidence.txt;type=text/plain' "$BASE/api/v1/evidence")
+          test "$PF" = "500"
+
+          echo "=== PROJECT 4: IDEMPOTENT PROCESSOR ==="
+          KEY="w1-${GITHUB_RUN_ID}-seq"
+          cat > /tmp/p4.json <<JSON
+          {"sku":"SKU-1001","warehouse":"NJ","quantityDelta":-3,"reason":"DAMAGE"}
+          JSON
+          C=$(http_code -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d @/tmp/p4.json "$BASE/api/v1/inventory-adjustments")
+          test "$C" = "201"
+          P4_ID=$(jq -r '.adjustment_id' /tmp/body.out)
+          for i in $(seq 1 10); do
+            C=$(http_code -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d @/tmp/p4.json "$BASE/api/v1/inventory-adjustments")
+            test "$C" = "200"
+            jq -e --arg id "$P4_ID" '.adjustment_id==$id and .replayed==true' /tmp/body.out >/dev/null
+          done
+          CONFLICT=$(http_code -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d '{"sku":"SKU-1001","warehouse":"NJ","quantityDelta":-4,"reason":"DAMAGE"}' "$BASE/api/v1/inventory-adjustments")
+          test "$CONFLICT" = "409"
+          EQ=$(http_code -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d '{"reason":"DAMAGE","quantityDelta":-3,"warehouse":"NJ","sku":"SKU-1001"}' "$BASE/api/v1/inventory-adjustments")
+          test "$EQ" = "200"
+          curl -fsS "$BASE/api/v1/idempotency/$KEY" | jq -e '.business_effect_count==1 and .processing_status=="COMPLETED"' >/dev/null
+
+          CKEY="w1-${GITHUB_RUN_ID}-concurrent"
+          rm -f /tmp/codes.*
+          for i in $(seq 1 10); do
+            (curl -sS -o "/tmp/cbody.$i" -w "%{http_code}" -H "Idempotency-Key: $CKEY" -H 'Content-Type: application/json' -d @/tmp/p4.json "$BASE/api/v1/inventory-adjustments" > "/tmp/codes.$i") &
+          done
+          wait
+          for f in /tmp/codes.*; do
+            code=$(cat "$f")
+            case "$code" in 200|201|409) ;; *) echo "Unexpected concurrent code $code"; exit 1;; esac
+          done
+          curl -fsS "$BASE/api/v1/idempotency/$CKEY" | jq -e '.business_effect_count==1 and .processing_status=="COMPLETED"' >/dev/null
+
+          LKEY="w1-${GITHUB_RUN_ID}-lost"
+          set +e
+          curl --max-time 15 -sS -H 'x-test-simulate-lost-response: 1' -H "Idempotency-Key: $LKEY" -H 'Content-Type: application/json' -d @/tmp/p4.json "$BASE/api/v1/inventory-adjustments" >/tmp/lost.out
+          LOST_RC=$?
+          set -e
+          echo "Lost-response curl rc=$LOST_RC"
+          sleep 1
+          LR=$(http_code -H "Idempotency-Key: $LKEY" -H 'Content-Type: application/json' -d @/tmp/p4.json "$BASE/api/v1/inventory-adjustments")
+          test "$LR" = "200"
+          jq -e '.replayed==true' /tmp/body.out >/dev/null
+          curl -fsS "$BASE/api/v1/idempotency/$LKEY" | jq -e '.business_effect_count==1' >/dev/null
+          MK=$(http_code -H 'Content-Type: application/json' -d @/tmp/p4.json "$BASE/api/v1/inventory-adjustments")
+          test "$MK" = "400"
+
+          echo "=== RESTART / DURABILITY PROOF ==="
+          RST=$(http_code -X POST "$BASE/api/v1/lab/restart")
+          test "$RST" = "202"
+          sleep 8
+          wait_ready
+          curl -fsS "$BASE/api/v1/business-requests/$P1_ID" | jq -e --arg id "$P1_ID" '.request_id==$id' >/dev/null
+          curl -fsS "$BASE/api/v1/workflow-instances/$P2_ID" | jq -e '.revision==2' >/dev/null
+          curl -fsS "$BASE/api/v1/evidence/$P3_ID" | jq -e --arg id "$P3_ID" '.evidence_id==$id' >/dev/null
+          curl -fsS "$BASE/api/v1/evidence/$P3_ID/content" -o /tmp/evidence-after-restart.txt
+          test "$LOCAL_SHA" = "$(sha256sum /tmp/evidence-after-restart.txt | awk '{print $1}')"
+          RR=$(http_code -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d @/tmp/p4.json "$BASE/api/v1/inventory-adjustments")
+          test "$RR" = "200"
+          jq -e --arg id "$P4_ID" '.adjustment_id==$id and .replayed==true' /tmp/body.out >/dev/null
+
+          echo "WEEK 1 LIVE ACCEPTANCE: PASS"
