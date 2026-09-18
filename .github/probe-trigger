@@ -1,2 +1,3 @@
-run: 1
+run: 2
 host: app-babco-w1-kirti-rnd-260918
+startup-diagnostics: true
