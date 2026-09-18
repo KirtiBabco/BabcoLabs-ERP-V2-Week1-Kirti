@@ -89,9 +89,10 @@ idempotencyRouter.get('/inventory-adjustments/:adjustmentId', async (req, res) =
 idempotencyRouter.get('/idempotency/:idempotencyKey', async (req, res) => {
   const pool = await getPool();
   const row = (await pool.request().input('key', sql.NVarChar(160), req.params.idempotencyKey).query(`
-    SELECT IdempotencyKey idempotency_key,RequestFingerprint request_fingerprint,ProcessingStatus processing_status,
-           ResultReference result_reference,HttpStatus http_status,CreatedAtUtc created_at_utc,CompletedAtUtc completed_at_utc
-    FROM dbo.IdempotencyRecords WHERE IdempotencyKey=@key`)).recordset[0];
+    SELECT r.IdempotencyKey idempotency_key,r.RequestFingerprint request_fingerprint,r.ProcessingStatus processing_status,
+           r.ResultReference result_reference,r.HttpStatus http_status,r.CreatedAtUtc created_at_utc,r.CompletedAtUtc completed_at_utc,
+           (SELECT COUNT(*) FROM dbo.InventoryAdjustments a WHERE a.IdempotencyKey=r.IdempotencyKey) business_effect_count
+    FROM dbo.IdempotencyRecords r WHERE r.IdempotencyKey=@key`)).recordset[0];
   if (!row) return apiError(res, 404, 'NOT_FOUND', 'Idempotency record not found');
   res.json(row);
 });
