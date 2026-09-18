@@ -82,6 +82,15 @@ jobs:
           jq -e 'length >= 4 and any(.[]; .definition_key=="RELEASE_LIFECYCLE")' /tmp/defs.json >/dev/null
           curl -fsS -H 'Content-Type: application/json' -d '{"definition_key":"APPROVAL"}' "$BASE/api/v1/workflow-instances" > /tmp/p2-created.json
           P2_ID=$(jq -r '.instance_id' /tmp/p2-created.json)
+
+          # Five illegal attempts must leave DRAFT unchanged.
+          for BAD_TRANSITION in APPROVE REJECT COMPLETE CLOSE RESOLVE; do
+            BAD=$(http_code -H 'Content-Type: application/json' -d "{\"transition\":\"$BAD_TRANSITION\",\"expectedCurrentState\":\"DRAFT\",\"reason\":\"illegal acceptance test\",\"actorRef\":\"LAB-USER-01\"}" "$BASE/api/v1/workflow-instances/$P2_ID/transitions")
+            test "$BAD" = "409"
+          done
+          curl -fsS "$BASE/api/v1/workflow-instances/$P2_ID" | jq -e '.current_state=="DRAFT" and .revision==0' >/dev/null
+          curl -fsS "$BASE/api/v1/workflow-instances/$P2_ID/history" | jq -e 'length==0' >/dev/null
+
           curl -fsS -H 'Content-Type: application/json' -d '{"transition":"SUBMIT","expectedCurrentState":"DRAFT","reason":"ready","actorRef":"LAB-USER-01"}' "$BASE/api/v1/workflow-instances/$P2_ID/transitions" >/dev/null
 
           BAD=$(http_code -H 'Content-Type: application/json' -d '{"transition":"SUBMIT","expectedCurrentState":"SUBMITTED","reason":"illegal","actorRef":"LAB-USER-01"}' "$BASE/api/v1/workflow-instances/$P2_ID/transitions")
@@ -121,6 +130,12 @@ jobs:
           curl -fsS "$BASE/api/v1/entities/BUSINESS_REQUEST/$P1_ID/evidence" | jq -e --arg id "$P3_ID" 'map(.evidence_id) | index($id) != null' >/dev/null
           curl -fsS -X POST "$BASE/api/v1/evidence/$P3_ID/verify-integrity" | jq -e '.integrity_ok==true' >/dev/null
           curl -fsS -X POST "$BASE/api/v1/lab/evidence/$P3_ID/corrupt-copy-check" | jq -e '.original_unchanged==true and .disposable_copy_integrity_ok==false' >/dev/null
+
+          # Same bytes, different filename: retain a second association with identical content hash.
+          curl -fsS -F 'entity_type=BUSINESS_REQUEST' -F "entity_id=$P1_ID" -F 'file=@/tmp/evidence.txt;filename=same-bytes-new-name.txt;type=text/plain' "$BASE/api/v1/evidence" > /tmp/p3-samebytes.json
+          P3_SAME=$(jq -r '.evidence_id' /tmp/p3-samebytes.json)
+          test "$P3_ID" != "$P3_SAME"
+          jq -e --arg sha "$LOCAL_SHA" '.sha256_hex==$sha' /tmp/p3-samebytes.json >/dev/null
 
           printf 'different bytes %s\n' "$GITHUB_RUN_ID" > /tmp/evidence2.txt
           curl -fsS -F 'entity_type=BUSINESS_REQUEST' -F "entity_id=$P1_ID" -F 'file=@/tmp/evidence2.txt;filename=evidence.txt;type=text/plain' "$BASE/api/v1/evidence" > /tmp/p3-second.json
