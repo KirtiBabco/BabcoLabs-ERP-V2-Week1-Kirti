@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          BASE="https://app-babco-w1-kirti-rnd-260918.azurewebsites.net"
+          BASE="https://app-babco-w1-kirti-0e27-rnd-260918.azurewebsites.net"
           for PATHX in / /health /api/v1/lab/startup /api/v1/workflow-definitions; do
             echo "===== $PATHX ====="
             curl --max-time 20 -sS -D /tmp/h -o /tmp/b -w "HTTP=%{http_code} TIME=%{time_total}\n" "$BASE$PATHX"
