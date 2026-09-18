@@ -20,7 +20,7 @@ businessRequestsRouter.post('/', async (req: Request, res: Response) => {
   const tx = new sql.Transaction(pool);
   try {
     await tx.begin();
-    const id = randomUUID(); const now = new Date(); const b = req.body;
+    const id = randomUUID(); const now = new Date(); const b = req.body as any;
     await new sql.Request(tx)
       .input('id', sql.UniqueIdentifier, id).input('num', sql.NVarChar(40), b.request_number)
       .input('type', sql.NVarChar(30), b.request_type).input('title', sql.NVarChar(200), b.title)
@@ -28,7 +28,7 @@ businessRequestsRouter.post('/', async (req: Request, res: Response) => {
       .input('status', sql.NVarChar(20), b.status).input('owner', sql.NVarChar(50), b.owner_code)
       .input('created', sql.DateTime2, now).input('updated', sql.DateTime2, now)
       .query(`INSERT dbo.BusinessRequests(RequestId,RequestNumber,RequestType,Title,Description,Priority,Status,OwnerCode,CreatedAtUtc,UpdatedAtUtc) VALUES(@id,@num,@type,@title,@desc,@priority,@status,@owner,@created,@updated)`);
-    for (const line of (b.lines || [])) {
+    for (const line of (Array.isArray(b.lines) ? b.lines : [])) {
       await new sql.Request(tx).input('lineId', sql.UniqueIdentifier, randomUUID()).input('requestId', sql.UniqueIdentifier, id)
         .input('lineNumber', sql.Int, line.line_number).input('itemCode', sql.NVarChar(60), line.item_code)
         .input('description', sql.NVarChar(300), line.description).input('quantity', sql.Decimal(18,3), line.quantity)
@@ -64,7 +64,7 @@ businessRequestsRouter.patch('/:requestId', async (req, res) => {
   if (!validatePatch(req.body)) return err(res, 400, 'VALIDATION_ERROR', 'Request validation failed', validationDetails(validatePatch.errors));
   const pool = await getPool(); const sets: string[] = []; const r = pool.request().input('id', sql.UniqueIdentifier, req.params.requestId).input('updated', sql.DateTime2, new Date());
   const map: any = { title:['Title',sql.NVarChar(200)], description:['Description',sql.NVarChar(2000)], priority:['Priority',sql.NVarChar(20)], status:['Status',sql.NVarChar(20)], owner_code:['OwnerCode',sql.NVarChar(50)] };
-  for (const [k,v] of Object.entries(req.body)) { const m=map[k]; if(m){ r.input(k,m[1],v as any); sets.push(`${m[0]}=@${k}`); } }
+  for (const [k,v] of Object.entries(req.body as Record<string, any>)) { const m=map[k]; if(m){ r.input(k,m[1],v as any); sets.push(`${m[0]}=@${k}`); } }
   const result = await r.query(`UPDATE dbo.BusinessRequests SET ${sets.join(',')}, UpdatedAtUtc=@updated WHERE RequestId=@id; SELECT @@ROWCOUNT affected;`);
   if (result.recordset[0]?.affected === 0) return err(res,404,'NOT_FOUND','Business request not found');
   res.json({ request_id:req.params.requestId, updated:true });
@@ -72,7 +72,7 @@ businessRequestsRouter.patch('/:requestId', async (req, res) => {
 
 businessRequestsRouter.post('/:requestId/lines', async (req,res) => {
   if (!validateLine(req.body)) return err(res,400,'VALIDATION_ERROR','Line validation failed',validationDetails(validateLine.errors));
-  const pool=await getPool(); const b=req.body; const lineId=randomUUID();
+  const pool=await getPool(); const b=req.body as any; const lineId=randomUUID();
   try {
     const parent=(await pool.request().input('id',sql.UniqueIdentifier,req.params.requestId).query('SELECT 1 ok FROM dbo.BusinessRequests WHERE RequestId=@id')).recordset[0];
     if(!parent) return err(res,400,'PARENT_NOT_FOUND','Parent business request does not exist');
@@ -83,7 +83,7 @@ businessRequestsRouter.post('/:requestId/lines', async (req,res) => {
 
 businessRequestsRouter.patch('/:requestId/lines/:lineId', async (req,res) => {
   if (!validateLine(req.body)) return err(res,400,'VALIDATION_ERROR','Line validation failed',validationDetails(validateLine.errors));
-  const pool=await getPool(); const b=req.body;
+  const pool=await getPool(); const b=req.body as any;
   try {
     const result=await pool.request().input('requestId',sql.UniqueIdentifier,req.params.requestId).input('lineId',sql.UniqueIdentifier,req.params.lineId).input('lineNumber',sql.Int,b.line_number).input('itemCode',sql.NVarChar(60),b.item_code).input('description',sql.NVarChar(300),b.description).input('quantity',sql.Decimal(18,3),b.quantity).input('unit',sql.NVarChar(10),b.unit).query(`UPDATE dbo.BusinessRequestLines SET LineNumber=@lineNumber,ItemCode=@itemCode,Description=@description,Quantity=@quantity,Unit=@unit WHERE RequestId=@requestId AND LineId=@lineId; SELECT @@ROWCOUNT affected;`);
     if(result.recordset[0]?.affected===0) return err(res,404,'NOT_FOUND','Line not found for parent request');
