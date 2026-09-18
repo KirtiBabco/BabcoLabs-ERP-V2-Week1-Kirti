@@ -3,6 +3,7 @@ import { businessRequestsRouter } from './api/businessRequests';
 import { workflowRouter } from './api/workflows';
 import { evidenceRouter } from './api/evidence';
 import { idempotencyRouter } from './api/idempotency';
+import { startupState } from './startup';
 
 export function createApp() {
   const app = express();
@@ -19,6 +20,10 @@ export function createApp() {
     }
   }));
   app.get('/health', (_req, res) => res.status(200).json({ status: 'ok', week: 1, projects: [1,2,3,4] }));
+  app.get('/api/v1/lab/startup', (_req, res) => {
+    if (process.env.ENABLE_TEST_HOOKS !== 'true') return res.status(404).json({ error: { code: 'NOT_FOUND' } });
+    res.status(startupState.ready ? 200 : 503).json(startupState);
+  });
   app.post('/api/v1/lab/restart', (_req, res) => {
     if (process.env.ENABLE_TEST_HOOKS !== 'true') return res.status(404).json({ error: { code: 'NOT_FOUND' } });
     res.status(202).json({ restarting: true });
