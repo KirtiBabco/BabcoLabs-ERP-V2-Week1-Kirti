@@ -7,6 +7,6 @@ describe("Week 1 smoke baseline", () => {
     const response = await request(createApp()).get("/health");
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: "ok", week: 1 });
+    expect(response.body).toEqual({ status: "ok", week: 1, projects: [1, 2, 3, 4] });
   });
 });
