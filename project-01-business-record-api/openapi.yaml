@@ -1,0 +1,35 @@
+openapi: 3.0.3
+info: { title: BABCO Week 1 Business Record API, version: 1.0.0 }
+paths:
+  /api/v1/business-requests:
+    post:
+      summary: Create a business request with optional lines
+      responses: { '201': {description: Created}, '400': {description: Validation error}, '409': {description: Conflict} }
+    get:
+      summary: List/filter business requests
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {type: string}}
+        - {name: ownerCode, in: query, schema: {type: string}}
+      responses: { '200': {description: Matching records} }
+  /api/v1/business-requests/{requestId}:
+    get:
+      summary: Get header and lines
+      parameters: [{name: requestId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Record}, '404': {description: Not found} }
+    patch:
+      summary: Update request fields
+      parameters: [{name: requestId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Updated}, '400': {description: Validation error}, '404': {description: Not found} }
+  /api/v1/business-requests/{requestId}/lines:
+    post:
+      summary: Add a line
+      parameters: [{name: requestId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '201': {description: Created}, '400': {description: Validation/parent error}, '409': {description: Line conflict} }
+  /api/v1/business-requests/{requestId}/lines/{lineId}:
+    patch:
+      summary: Update a line
+      parameters:
+        - {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: lineId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: { '200': {description: Updated}, '404': {description: Not found}, '409': {description: Line conflict} }

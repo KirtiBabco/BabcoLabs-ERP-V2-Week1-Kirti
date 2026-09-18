@@ -1,12 +1,16 @@
-# Project 2 — State Machine Service
+# Project 2 — Reusable State Machine
 
-Purpose: prove that workflow state is server-owned, persisted, data-driven, transactional, and concurrency-safe.
+A configuration-driven workflow service implemented in the shared Week 1 runtime.
 
-Minimum evidence:
-- workflow definitions/states/transitions stored as data;
-- valid transitions accepted;
-- invalid/stale transitions rejected;
-- state + immutable history change atomically;
-- competing incompatible transitions allow at most one winner.
+## Running endpoints
+- GET /api/v1/workflow-definitions
+- POST /api/v1/workflow-instances
+- GET /api/v1/workflow-instances/{id}
+- POST /api/v1/workflow-instances/{id}/transitions
+- GET /api/v1/workflow-instances/{id}/history
 
-Implementation starts after the common baseline and Project 1 learning foundation are verified.
+## Design
+Workflow rules are stored in SQL as definitions, states and transitions. The same engine runs Approval, Issue Resolution, Document Review, and the fourth data-only Release Lifecycle workflow. Accepted state change + history append use one SERIALIZABLE SQL transaction with row locks and expectedCurrentState protection.
+
+## Acceptance
+Live workflow: .github/workflows/week1-live-acceptance.yml

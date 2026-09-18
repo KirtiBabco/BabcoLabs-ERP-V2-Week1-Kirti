@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info: { title: BABCO Week 1 Idempotent Request Processor, version: 1.0.0 }
+paths:
+  /api/v1/inventory-adjustments:
+    post:
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 160}}
+      responses: { '201': {description: New adjustment}, '200': {description: Replayed result}, '400': {description: Invalid/missing key}, '409': {description: Conflict or in-progress} }
+  /api/v1/inventory-adjustments/{adjustmentId}:
+    get:
+      parameters: [{name: adjustmentId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Adjustment}, '404': {description: Not found} }
+  /api/v1/idempotency/{idempotencyKey}:
+    get:
+      parameters: [{name: idempotencyKey, in: path, required: true, schema: {type: string}}]
+      responses: { '200': {description: Lab diagnostic state}, '404': {description: Not found} }

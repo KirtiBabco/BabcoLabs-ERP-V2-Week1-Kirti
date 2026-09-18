@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info: { title: BABCO Week 1 Document Evidence Store, version: 1.0.0 }
+paths:
+  /api/v1/evidence:
+    post:
+      summary: Store original Blob bytes plus SQL metadata
+      responses: { '201': {description: Stored}, '400': {description: Invalid evidence request}, '500': {description: Storage publication failed} }
+  /api/v1/evidence/{evidenceId}:
+    get:
+      parameters: [{name: evidenceId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Metadata}, '404': {description: Not found} }
+  /api/v1/evidence/{evidenceId}/content:
+    get:
+      parameters: [{name: evidenceId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Exact original bytes}, '404': {description: Not found} }
+  /api/v1/evidence/{evidenceId}/verify-integrity:
+    post:
+      parameters: [{name: evidenceId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: SHA-256 integrity result}, '404': {description: Not found} }
+  /api/v1/entities/{entityType}/{entityId}/evidence:
+    get:
+      parameters:
+        - {name: entityType, in: path, required: true, schema: {type: string}}
+        - {name: entityId, in: path, required: true, schema: {type: string}}
+      responses: { '200': {description: Linked evidence} }

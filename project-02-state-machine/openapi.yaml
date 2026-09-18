@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info: { title: BABCO Week 1 State Machine Service, version: 1.0.0 }
+paths:
+  /api/v1/workflow-definitions:
+    get: { responses: { '200': {description: Definitions} } }
+  /api/v1/workflow-instances:
+    post: { responses: { '201': {description: Instance created}, '400': {description: Invalid definition/payload} } }
+  /api/v1/workflow-instances/{instanceId}:
+    get:
+      parameters: [{name: instanceId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Current state}, '404': {description: Not found} }
+  /api/v1/workflow-instances/{instanceId}/transitions:
+    post:
+      parameters: [{name: instanceId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Accepted}, '400': {description: Bad payload}, '404': {description: Not found}, '409': {description: Invalid or stale transition} }
+  /api/v1/workflow-instances/{instanceId}/history:
+    get:
+      parameters: [{name: instanceId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: { '200': {description: Accepted transition history}, '404': {description: Not found} }
